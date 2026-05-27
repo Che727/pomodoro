@@ -1,0 +1,733 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>番茄闹钟</title>
+<style>
+  /*
+   * ========================================
+   * CSS 自定义属性（变量）—— 主题色系统
+   * ========================================
+   * 暖色调大地色系（Earth-Tone Palette）：
+   *   - work（工作/番茄）: 赤陶色（terracotta）
+   *   - sbreak（短休息）: 鼠尾草绿（sage green）
+   *   - lbreak（长休息）: 灰蓝色（dusty blue）
+   * 每个模式有主色（按钮、进度环）和浅色（光晕、高亮）。
+   * 修改变量值即可一键换肤。
+   */
+  :root {
+    --work: #ca5c4b;
+    --work-light: #f5d5ca;
+    --short-break: #6b8e7a;
+    --short-break-light: #dce8e1;
+    --long-break: #8b9dbf;
+    --long-break-light: #e2e7f2;
+    --bg: #f9f0ed;              /* 页面背景色：暖奶油色（参考图主背景） */
+    --card: #fffaf8;            /* 卡片背景色：暖白（略暖于纯白） */
+    --text: #2c2722;            /* 主文字色：暖深棕（参考图最深色） */
+    --text-secondary: #8a807a;  /* 次要文字色：暖灰色（参考图中灰） */
+    --ring-bg: #e8ded9;         /* 进度环底色：暖浅灰 */
+  }
+
+  /* 全局重置：消除浏览器默认边距，统一盒模型为 border-box */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  /*
+   * body 布局：Flexbox 居中
+   * 将整个卡片水平和垂直居中于视口
+   * user-select: none 防止用户双击计时器时选中文字
+   */
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    background: var(--bg);
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  /*
+   * 卡片容器：白色圆角卡片，带柔和阴影
+   * Flexbox 纵向排列所有子元素（模式标签、进度环、按钮、番茄计数点）
+   */
+  .card {
+    background: var(--card);
+    border-radius: 28px;
+    padding: 44px 48px 36px;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.08), 0 1px 3px rgba(0,0,0,0.04);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 420px;
+    max-width: 94vw;  /* 小屏幕上留出边距 */
+  }
+
+  /*
+   * ========================================
+   * 模式切换标签栏（Modes Tabs）
+   * ========================================
+   * iOS 风格的分段控件（segmented control）
+   * 外层灰色背景 + 内层白色滑块（.active）
+   */
+  .modes {
+    display: flex;
+    gap: 4px;
+    background: #efe4df;        /* 暖灰色底，与暖色调背景协调 */
+    border-radius: 14px;
+    padding: 4px;
+    margin-bottom: 32px;
+    width: 100%;
+  }
+
+  .mode-btn {
+    flex: 1;           /* 三个按钮等分宽度 */
+    border: none;
+    background: transparent;
+    padding: 10px 8px;
+    border-radius: 11px;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.2s;
+    white-space: nowrap;
+  }
+
+  /* 当前激活的模式按钮：白底 + 投影，形成"浮起"效果 */
+  .mode-btn.active {
+    background: #fff;
+    color: var(--text);
+    box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+  }
+
+  /* 激活态的颜色随模式变化：工作红 / 短休息绿 / 长休息蓝 */
+  .mode-btn.work.active    { color: var(--work); }
+  .mode-btn.sbreak.active  { color: var(--short-break); }
+  .mode-btn.lbreak.active  { color: var(--long-break); }
+
+  /*
+   * ========================================
+   * SVG 圆形进度环（Progress Ring）
+   * ========================================
+   * 原理：用 SVG circle 的 stroke-dasharray 和 stroke-dashoffset 实现圆弧进度
+   *   - stroke-dasharray 设为圆的周长（791.68），表示虚线总长度
+   *   - stroke-dashoffset 设为 0 表示实线撑满（100%），设为周长表示完全消失（0%）
+   *   - 圆形半径 r=126，在 280x280 的 viewBox 中居中
+   *   - transform: rotate(-90deg) 让进度从 12 点钟方向开始（SVG 默认从 3 点钟方向）
+   */
+  .ring-container {
+    position: relative;
+    width: 280px;
+    height: 280px;
+    margin-bottom: 28px;
+  }
+
+  .ring-svg {
+    transform: rotate(-90deg);  /* 旋转 -90° 让起点在顶部 */
+    width: 100%;
+    height: 100%;
+  }
+
+  /* 底色圆环：始终显示的灰色背景环 */
+  .ring-bg {
+    fill: none;
+    stroke: var(--ring-bg);
+    stroke-width: 12;
+  }
+
+  /* 进度圆环：覆盖在底色环之上，stroke-dashoffset 由 JS 动态控制 */
+  .ring-progress {
+    fill: none;
+    stroke: var(--work);
+    stroke-width: 12;
+    stroke-linecap: round;       /* 圆角端点 */
+    transition: stroke-dashoffset 0.3s linear, stroke 0.4s;
+  }
+
+  .ring-progress.work    { stroke: var(--work); }
+  .ring-progress.sbreak  { stroke: var(--short-break); }
+  .ring-progress.lbreak  { stroke: var(--long-break); }
+
+  /*
+   * 时间显示：定位在圆环正中央
+   * 使用绝对定位 + inset:0 覆盖整个圆环区域
+   */
+  .timer-display {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .time {
+    font-size: 64px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;  /* 等宽数字，防止时间跳动 */
+    color: var(--text);
+    letter-spacing: -1px;
+    line-height: 1;
+  }
+
+  .status-label {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    margin-top: 6px;
+    letter-spacing: 0.5px;
+  }
+
+  /*
+   * ========================================
+   * 控制按钮（Controls）
+   * ========================================
+   * 主按钮（开始/暂停）：64px 圆形，颜色随模式变化
+   * 重置按钮：48px 圆形，灰色
+   * :active 时缩放至 0.95 提供按下反馈
+   */
+  .controls {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+
+  .btn {
+    border: none;
+    cursor: pointer;
+    font-family: inherit;
+    transition: all 0.15s;
+  }
+
+  .btn:active { transform: scale(0.95); }
+
+  .btn-start {
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    font-size: 32px;
+    font-weight: 700;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.15);
+  }
+
+  .btn-start.work    { background: var(--work); }
+  .btn-start.sbreak  { background: var(--short-break); }
+  .btn-start.lbreak  { background: var(--long-break); }
+
+  .btn-start:hover  { filter: brightness(1.08); }
+  .btn-start.paused { filter: brightness(0.92); }
+
+  .btn-reset {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    background: #efe4df;
+    color: var(--text-secondary);
+    font-size: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .btn-reset:hover { background: #e5d8d2; }
+
+  /*
+   * ========================================
+   * 番茄计数圆点（Session Dots）
+   * ========================================
+   * 4 个灰色圆点表示一个番茄周期
+   * .done 类的圆点变为红色并带光晕，表示已完成的番茄
+   * 每完成一个工作番茄就点亮一个，满 4 个后归零（进入新一轮）
+   */
+  .sessions {
+    display: flex;
+    gap: 10px;
+    margin-top: 24px;
+  }
+
+  .dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #e0d5cf;        /* 暖灰色未完成圆点 */
+    transition: all 0.3s;
+  }
+
+  .dot.done {
+    background: var(--work);
+    box-shadow: 0 0 0 3px var(--work-light);  /* 红色光晕 */
+  }
+
+  /*
+   * ========================================
+   * 响应式布局（Responsive）
+   * ========================================
+   * 屏幕宽度 ≤ 440px 时缩小各元素尺寸
+   */
+  @media (max-width: 440px) {
+    .card { padding: 28px 20px 24px; }
+    .ring-container { width: 220px; height: 220px; }
+    .time { font-size: 48px; }
+    .mode-btn { font-size: 12px; padding: 8px 4px; }
+  }
+</style>
+</head>
+<body>
+
+<!--
+  ================================================================
+  整体结构：一张白色卡片，从上到下依次为：
+    1. 模式选择标签栏（工作 / 短休息 / 长休息）
+    2. SVG 圆形进度环 + 中央时间显示
+    3. 控制按钮（开始/暂停 + 重置）
+    4. 番茄计数圆点（4 个）
+  ================================================================
+-->
+<div class="card">
+  <!-- ===== 1. 模式切换标签栏 ===== -->
+  <div class="modes">
+    <!-- data-mode 属性供 JS 读取，决定切换到哪种模式 -->
+    <button class="mode-btn work active" data-mode="work">工作 · 25分钟</button>
+    <button class="mode-btn sbreak" data-mode="sbreak">短休息 · 5分钟</button>
+    <button class="mode-btn lbreak" data-mode="lbreak">长休息 · 15分钟</button>
+  </div>
+
+  <!-- ===== 2. 进度环 + 时间显示 ===== -->
+  <div class="ring-container">
+    <!--
+      SVG 进度环原理：
+        - viewBox="0 0 280 280" 定义坐标系
+        - 底层圆环（.ring-bg）：始终可见的灰色圆形轨道
+        - 上层圆环（#ring）：通过 stroke-dashoffset 动态控制显示长度
+        - stroke-dasharray="791.68" = 2 × π × 126（圆周长）
+        - stroke-dashoffset 从 0（满环）到 791.68（空环）线性变化
+        - JS 中每次 tick 重新计算 offset 值，实现倒计时动画
+    -->
+    <svg class="ring-svg" viewBox="0 0 280 280">
+      <circle class="ring-bg" cx="140" cy="140" r="126"/>
+      <circle class="ring-progress work" id="ring" cx="140" cy="140" r="126"
+              stroke-dasharray="791.68" stroke-dashoffset="0"/>
+    </svg>
+    <!-- 时间文字叠加在圆环中央 -->
+    <div class="timer-display">
+      <!-- #time 显示 MM:SS 格式的剩余时间 -->
+      <div class="time" id="time">25:00</div>
+      <!-- #status 显示当前状态描述 -->
+      <div class="status-label" id="status">准备开始</div>
+    </div>
+  </div>
+
+  <!-- ===== 3. 控制按钮 ===== -->
+  <div class="controls">
+    <!-- #btnStart：开始/暂停主按钮，图标随状态切换 ▶ / ⏸ -->
+    <button class="btn btn-start work" id="btnStart" title="开始">▶</button>
+    <!-- #btnReset：重置按钮，将计时器恢复到当前模式的初始值 -->
+    <button class="btn btn-reset" id="btnReset" title="重置">↺</button>
+  </div>
+
+  <!-- ===== 4. 番茄计数圆点 ===== -->
+  <div class="sessions" id="sessions">
+    <span class="dot"></span>
+    <span class="dot"></span>
+    <span class="dot"></span>
+    <span class="dot"></span>
+  </div>
+</div>
+
+<script>
+/*
+ * ================================================================
+ * 全局常量
+ * ================================================================
+ */
+
+// 圆的周长 = 2 × π × 半径(126) = 791.68
+// stroke-dasharray 设为此值，stroke-dashoffset 从 0 到该值控制圆弧可见长度
+const CIRCUMFERENCE = 2 * Math.PI * 126; // ~791.68
+
+/*
+ * 模式配置表
+ * 每种模式定义了：
+ *   - label: 中文标签（显示在状态栏）
+ *   - minutes: 默认时长（分钟）
+ *   - cls: CSS 类名（决定颜色主题：work/sbreak/lbreak）
+ */
+const MODES = {
+  work:    { label: '工作', minutes: 25, cls: 'work' },
+  sbreak:  { label: '短休息', minutes: 5,  cls: 'sbreak' },
+  lbreak:  { label: '长休息', minutes: 15, cls: 'lbreak' },
+};
+
+/*
+ * ================================================================
+ * 全局状态对象（State）
+ * ================================================================
+ * 整个应用的状态集中管理在此对象中，不分散到各函数。
+ * 状态机流转：
+ *   idle（初始/已重置） → running（计时中） → paused（暂停） → running ...
+ *                                                    ↓ 计时到 0
+ *                                               finished（结束） → 自动切换模式 → idle
+ */
+let state = {
+  mode: 'work',                              // 当前模式（work | sbreak | lbreak）
+  totalSeconds: MODES.work.minutes * 60,     // 当前模式总秒数
+  remainingSeconds: MODES.work.minutes * 60, // 剩余秒数（递减至 0）
+  timerId: null,                             // setInterval 返回的 ID，用于 clearInterval
+  running: false,                            // 是否正在倒计时
+  completedSessions: 0,                      // 已完成的番茄总数（用于自动判断短/长休息）
+};
+
+/*
+ * DOM 元素引用
+ * 在脚本初始化时获取，避免每次操作都 querySelector
+ */
+const ring        = document.getElementById('ring');        // SVG 进度圆环
+const timeEl      = document.getElementById('time');        // 时间文字（MM:SS）
+const statusEl    = document.getElementById('status');      // 状态描述文字
+const btnStart    = document.getElementById('btnStart');    // 开始/暂停按钮
+const sessionsEl  = document.getElementById('sessions');    // 番茄计数点容器
+
+// ================================================================
+// 渲染函数
+// ================================================================
+
+/*
+ * 格式化时间为 MM:SS
+ * 输入：秒数（如 375 表示 6分15秒）
+ * 输出：形如 "06:15" 的字符串
+ * padStart(2, '0') 确保始终两位数（如 "01" 而非 "1"）
+ */
+function formatTime(sec) {
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+}
+
+/*
+ * 更新 SVG 进度环
+ * 计算剩余时间占总量比例，按比例设置 stroke-dashoffset
+ *   - 100% 剩余 → offset = 0（满环）
+ *   - 0% 剩余   → offset = 791.68（空环）
+ */
+function updateRing() {
+  const fraction = state.remainingSeconds / state.totalSeconds;
+  ring.style.strokeDashoffset = CIRCUMFERENCE * (1 - fraction);
+}
+
+/*
+ * 切换元素的模式 CSS 类
+ * 先清空 work/sbreak/lbreak 三类，再添加目标类
+ * 用于进度环和按钮的颜色随模式变化
+ */
+function setModeClass(el, cls) {
+  el.classList.remove('work', 'sbreak', 'lbreak');
+  el.classList.add(cls);
+}
+
+/*
+ * 总渲染函数：刷新整个 UI
+ * 调用时机：每次 tick、切换模式、开始/暂停/重置
+ * 刷新内容：时间文字、进度环、按钮颜色/图标、状态文字、模式标签、计数圆点
+ */
+function updateUI() {
+  // 1. 更新时间文字和进度环
+  timeEl.textContent = formatTime(state.remainingSeconds);
+  updateRing();
+
+  // 2. 更新进度环颜色（红/绿/蓝）
+  setModeClass(ring, MODES[state.mode].cls);
+
+  // 3. 更新主按钮颜色
+  setModeClass(btnStart, MODES[state.mode].cls);
+
+  // 4. 切换按钮图标：运行中显示 ⏸，否则显示 ▶
+  btnStart.textContent = state.running ? '⏸' : '▶';
+  // paused 类用于调暗按钮颜色（视觉提示当前处于暂停态）
+  if (!state.running) btnStart.classList.add('paused');
+  else btnStart.classList.remove('paused');
+
+  // 5. 更新状态描述文字
+  if (state.running) {
+    statusEl.textContent = MODES[state.mode].label + '中...';
+  } else if (state.remainingSeconds < state.totalSeconds) {
+    statusEl.textContent = '已暂停';                // 有未完成的时间但暂停了
+  } else {
+    statusEl.textContent = '准备开始';               // 时间完整，尚未开始
+  }
+
+  // 6. 更新顶部模式标签栏的高亮
+  document.querySelectorAll('.mode-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.mode === state.mode);
+  });
+
+  // 7. 更新底部番茄计数圆点
+  renderDots();
+}
+
+/*
+ * 渲染底部 4 个番茄计数圆点
+ * completedSessions % 4 算出当前周期内完成了几个
+ *   0 个 → 4 个空圆点
+ *   2 个 → 前 2 个点亮，后 2 个灰色
+ *   4 个 → 全部点亮，下一轮自动归零
+ */
+function renderDots() {
+  let html = '';
+  for (let i = 0; i < 4; i++) {
+    const done = i < (state.completedSessions % 4);  // 当前周期内的前 N 个点亮
+    html += `<span class="dot${done ? ' done' : ''}"></span>`;
+  }
+  sessionsEl.innerHTML = html;
+}
+
+// ================================================================
+// 计时器核心逻辑
+// ================================================================
+
+/*
+ * tick() —— 每秒调用一次（由 setInterval 驱动）
+ * 将 remainingSeconds 减 1，刷新 UI
+ * 当 remainingSeconds 归零时，调用 finish() 完成当前阶段
+ */
+function tick() {
+  if (state.remainingSeconds <= 0) return;  // 防御：已归零不再递减
+  state.remainingSeconds--;
+  updateUI();
+
+  if (state.remainingSeconds <= 0) {
+    finish();  // 计时结束，进入结算流程
+  }
+}
+
+/*
+ * start() —— 开始计时
+ * 前置条件：不在运行中 && 剩余秒数 > 0
+ * 用 setInterval 每秒调用 tick()，timerId 保存句柄以供后续取消
+ */
+function start() {
+  if (state.running) return;               // 已在运行，忽略
+  if (state.remainingSeconds <= 0) return; // 时间已耗尽，需先重置
+
+  state.running = true;
+  state.timerId = setInterval(tick, 1000);  // 每 1000ms 执行一次 tick
+  updateUI();
+}
+
+/*
+ * pause() —— 暂停计时
+ * 清除 setInterval，running 置 false
+ * 再次点击开始时会从当前剩余时间继续倒计时
+ */
+function pause() {
+  state.running = false;
+  if (state.timerId) {
+    clearInterval(state.timerId);
+    state.timerId = null;
+  }
+  updateUI();
+}
+
+/*
+ * reset() —— 重置计时器
+ * 暂停 + 将剩余时间恢复为当前模式的完整时长
+ */
+function reset() {
+  pause();
+  state.remainingSeconds = state.totalSeconds;
+  updateUI();
+}
+
+/*
+ * switchMode(mode) —— 切换工作/休息模式
+ * 暂停当前计时，切换到新模式，重置为该模式的完整时长
+ */
+function switchMode(mode) {
+  pause();
+  state.mode = mode;
+  state.totalSeconds = MODES[mode].minutes * 60;
+  state.remainingSeconds = state.totalSeconds;
+  updateUI();
+}
+
+/*
+ * finish() —— 计时完成后的结算逻辑
+ * 1. 如果刚完成的是工作番茄：
+ *    - completedSessions +1
+ *    - 每 4 个番茄自动切换到长休息（15min）
+ *    - 否则切换到短休息（5min）
+ * 2. 如果刚完成的是休息（短或长）：
+ *    - 切换到工作模式（25min）
+ * 3. 播放提示音 + 发送桌面通知
+ */
+function finish() {
+  pause();
+  state.remainingSeconds = 0;
+
+  if (state.mode === 'work') {
+    // ---- 刚完成一个工作番茄 ----
+    state.completedSessions++;
+    if (state.completedSessions % 4 === 0) {
+      // 每 4 个番茄 → 长休息
+      switchMode('lbreak');
+      statusEl.textContent = '完成！进入长休息';
+    } else {
+      // 不足 4 个 → 短休息
+      switchMode('sbreak');
+      statusEl.textContent = '完成！进入短休息';
+    }
+  } else {
+    // ---- 刚完成休息（短休息或长休息） ----
+    switchMode('work');
+    statusEl.textContent = '休息结束，开始工作';
+  }
+
+  playSound();          // 播放提示音
+  sendNotification();   // 发送桌面通知
+  updateUI();
+}
+
+// ================================================================
+// 音频系统（Web Audio API）
+// ================================================================
+
+/*
+ * playSound() —— 使用 Web Audio API 合成提示音
+ * 原理：
+ *   1. 创建 AudioContext（音频上下文）
+ *   2. 创建 OscillatorNode（振荡器）生成指定频率的正弦波
+ *   3. 创建 GainNode（增益节点）控制音量，用 exponentialRampToValueAtTime 实现淡出
+ *   4. 连接：Oscillator → Gain → Destination（扬声器）
+ *   5. 在三个时间点（0ms, 200ms, 400ms）分别播放 800Hz, 1000Hz, 1200Hz 的短音
+ *   6. 每个音持续 400ms，形成三连升调提示音（叮-叮-叮）
+ * 无需任何外部音频文件。
+ */
+function playSound() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const notes = [800, 1000, 1200];  // 三个频率（Hz）：低→中→高，产生升调效果
+    notes.forEach((freq, i) => {
+      const osc = ctx.createOscillator();      // 振荡器：产生声音波形
+      const gain = ctx.createGain();           // 增益器：控制音量
+      osc.type = 'sine';                       // 正弦波（柔和音色）
+      osc.frequency.value = freq;               // 设置频率（音高）
+      gain.gain.setValueAtTime(0.3, ctx.currentTime + i * 0.2);              // 在播放时刻设置音量 30%
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i * 0.2 + 0.4); // 400ms 内指数衰减到 0
+      osc.connect(gain);                       // 振荡器 → 增益器
+      gain.connect(ctx.destination);           // 增益器 → 扬声器
+      osc.start(ctx.currentTime + i * 0.2);    // 在 i×200ms 时刻开始播放
+      osc.stop(ctx.currentTime + i * 0.2 + 0.4); // 播放 400ms 后停止
+    });
+  } catch (_) { /* 浏览器不支持 Audio API 时静默失败 */ }
+}
+
+// ================================================================
+// 桌面通知系统（Notification API）
+// ================================================================
+
+/*
+ * sendNotification() —— 发送浏览器桌面通知
+ * 流程：
+ *   1. 检查浏览器是否支持 Notification API
+ *   2. 如果权限已授予 → 直接发送通知
+ *   3. 如果权限被拒绝 → 什么都不做
+ *   4. 如果权限未决定（default）→ 请求权限
+ * 通知内容根据即将开始的模式（已切换后的 mode）动态变化
+ */
+function sendNotification() {
+  if (!('Notification' in window)) return;      // 浏览器不支持，直接返回
+  if (Notification.permission === 'granted') {
+    // 权限已授予：根据当前模式（finish 已切换过 mode）发送对应文案
+    const title = state.mode === 'work'
+      ? '工作完成！休息一下吧 ☕'
+      : '休息结束！开始新一轮工作 💪';
+    new Notification('番茄闹钟', {
+      body: title,
+      // SVG data URI 作为通知图标（🍅 emoji）
+      icon: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">🍅</text></svg>'
+    });
+  } else if (Notification.permission !== 'denied') {
+    // 权限状态为 'default'（用户尚未做决定）→ 请求权限
+    Notification.requestPermission();
+  }
+}
+
+// ================================================================
+// 事件监听
+// ================================================================
+
+/*
+ * 主按钮（#btnStart）点击事件
+ * 三种情况：
+ *   1. 剩余时间为 0 → 重置后再开始
+ *   2. 正在运行 → 暂停
+ *   3. 未运行 → 开始计时
+ */
+btnStart.addEventListener('click', () => {
+  if (state.remainingSeconds <= 0) {
+    reset();        // 时间耗尽时点击 → 重置
+    return;
+  }
+  if (state.running) pause();
+  else start();
+});
+
+/*
+ * 重置按钮点击事件：直接调用 reset()
+ */
+document.getElementById('btnReset').addEventListener('click', reset);
+
+/*
+ * 模式标签点击事件
+ * 读取按钮的 data-mode 属性，调用 switchMode 切换到对应模式
+ */
+document.querySelectorAll('.mode-btn').forEach(btn => {
+  btn.addEventListener('click', () => switchMode(btn.dataset.mode));
+});
+
+/*
+ * 键盘快捷键
+ *   - 空格键（Space）：开始/暂停（等同于点击主按钮）
+ *   - R 键：重置
+ *   - 数字键 1/2/3：快速切换 工作/短休息/长休息
+ * e.preventDefault() 防止空格键导致页面滚动
+ */
+document.addEventListener('keydown', e => {
+  if (e.code === 'Space') {
+    e.preventDefault();       // 阻止空格默认的页面滚动行为
+    btnStart.click();         // 触发主按钮点击
+  } else if (e.code === 'KeyR') {
+    reset();
+  } else if (e.code === 'Digit1') {
+    switchMode('work');
+  } else if (e.code === 'Digit2') {
+    switchMode('sbreak');
+  } else if (e.code === 'Digit3') {
+    switchMode('lbreak');
+  }
+});
+
+/*
+ * 首次点击页面时请求通知权限
+ * { once: true } 确保只执行一次，避免重复请求
+ * 浏览器要求 Notification.requestPermission() 必须由用户手势触发
+ */
+document.addEventListener('click', () => {
+  if ('Notification' in window && Notification.permission === 'default') {
+    Notification.requestPermission();
+  }
+}, { once: true });
+
+// ================================================================
+// 初始化：首次渲染 UI
+// ================================================================
+updateUI();
+</script>
+</body>
+</html>
