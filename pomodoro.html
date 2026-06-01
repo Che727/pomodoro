@@ -17,17 +17,17 @@
    * 修改变量值即可一键换肤。
    */
   :root {
-    --work: #e07060;
-    --work-light: rgba(224, 112, 96, 0.3);
-    --short-break: #7db892;
-    --short-break-light: rgba(125, 184, 146, 0.3);
-    --long-break: #97b0d4;
-    --long-break-light: rgba(151, 176, 212, 0.3);
-    --bg: #2a2622;              /* 页面背景色：中深暖棕 */
-    --card: #35322e;            /* 卡片背景色：中深暖灰棕 */
-    --text: #f0e8e2;            /* 主文字色：暖白 */
-    --text-secondary: #9a9088;  /* 次要文字色：暖灰 */
-    --ring-bg: #4a4540;         /* 进度环底色：中深暖灰 */
+    --work: #ca5c4b;
+    --work-light: #f5d5ca;
+    --short-break: #6b8e7a;
+    --short-break-light: #dce8e1;
+    --long-break: #8b9dbf;
+    --long-break-light: #e2e7f2;
+    --bg: #f9f0ed;              /* 页面背景色：暖奶油色（参考图主背景） */
+    --card: #fffaf8;            /* 卡片背景色：暖白（略暖于纯白） */
+    --text: #2c2722;            /* 主文字色：暖深棕（参考图最深色） */
+    --text-secondary: #8a807a;  /* 次要文字色：暖灰色（参考图中灰） */
+    --ring-bg: #e8ded9;         /* 进度环底色：暖浅灰 */
   }
 
   /* 全局重置：消除浏览器默认边距，统一盒模型为 border-box */
@@ -57,7 +57,7 @@
     background: var(--card);
     border-radius: 28px;
     padding: 44px 48px 36px;
-    box-shadow: 0 12px 40px rgba(0,0,0,0.4), 0 1px 3px rgba(0,0,0,0.3);
+    box-shadow: 0 12px 40px rgba(0,0,0,0.08), 0 1px 3px rgba(0,0,0,0.04);
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -75,7 +75,7 @@
   .modes {
     display: flex;
     gap: 4px;
-    background: #3e3a36;        /* 中深暖灰底 */
+    background: #efe4df;        /* 暖灰色底，与暖色调背景协调 */
     border-radius: 14px;
     padding: 4px;
     margin-bottom: 32px;
@@ -98,9 +98,9 @@
 
   /* 当前激活的模式按钮：白底 + 投影，形成"浮起"效果 */
   .mode-btn.active {
-    background: #4d4944;
+    background: #fff;
     color: var(--text);
-    box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+    box-shadow: 0 1px 4px rgba(0,0,0,0.08);
   }
 
   /* 激活态的颜色随模式变化：工作红 / 短休息绿 / 长休息蓝 */
@@ -214,7 +214,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    box-shadow: 0 6px 20px rgba(0,0,0,0.5);
+    box-shadow: 0 6px 20px rgba(0,0,0,0.15);
   }
 
   .btn-start.work    { background: var(--work); }
@@ -228,7 +228,7 @@
     width: 48px;
     height: 48px;
     border-radius: 50%;
-    background: #4a4540;
+    background: #efe4df;
     color: var(--text-secondary);
     font-size: 20px;
     display: flex;
@@ -236,7 +236,7 @@
     justify-content: center;
   }
 
-  .btn-reset:hover { background: #5a5550; }
+  .btn-reset:hover { background: #e5d8d2; }
 
   /*
    * ========================================
@@ -256,7 +256,7 @@
     width: 12px;
     height: 12px;
     border-radius: 50%;
-    background: #524d48;        /* 中暖灰未完成圆点 */
+    background: #e0d5cf;        /* 暖灰色未完成圆点 */
     transition: all 0.3s;
   }
 
